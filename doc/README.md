@@ -12,7 +12,7 @@ results:
 Democratic would use more the words like: union, democracy, children, women, generation
 Republican would use more the words like: bussiness, freedom, laws, economy, laws, labor, amendment
 
-So we can see that Democratic tend to say something more about human rights, democracy while Republican like to mention government-related issues like laws, rece, economy
+So we can see that Democratic tend to say something more about democracy while Republican like to mention government-related issues like laws, rece, economy
 
 
 For the topics, there doesn't exist a big difference. 
