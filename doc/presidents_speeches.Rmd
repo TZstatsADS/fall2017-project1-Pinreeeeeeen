@@ -1,0 +1,317 @@
+---
+title: "topic differences between Republican and Democratic & history of use of words"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+This notebook was prepared with the following environmental settings.
+
+```{r}
+print(R.version)
+options(encodeing="utf-8")
+```
+
+
+#step 0: load libraries:
+```{r}
+packages.used=c("tm", "wordcloud", "RColorBrewer", 
+                "dplyr", "tidytext","readr","plotly","rvest", "tibble", "qdap", 
+                "sentimentr", "gplots", "dplyr",
+                "tm", "syuzhet", "factoextra", 
+                "beeswarm", "scales", "RColorBrewer",
+                "RANN", "tm", "topicmodels")
+
+# check packages that need to be installed.
+packages.needed=setdiff(packages.used, 
+                        intersect(installed.packages()[,1], 
+                                  packages.used))
+# install additional packages
+if(length(packages.needed)>0){
+  install.packages(packages.needed, dependencies = TRUE,
+                   repos='http://cran.us.r-project.org')
+}
+
+library(tm)
+library(dplyr)
+library(tidytext)
+library(readr)
+library(plotly)
+library(topicmodels)
+
+
+
+```
+
+
+#step 1: load all files:
+```{r}
+
+# load all files into a Corpus
+
+
+
+
+ff.all<-Corpus(DirSource("../data/InauguralSpeeches"))
+
+
+# load Inaugration Info
+InaugurationInfo <- read_delim("../data/inauglist.csv",delim=",")
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+
+InaugurationInfo$Year=substrRight(InaugurationInfo$Date,4)
+
+InaugurationInfo$President_term=paste(InaugurationInfo$File,InaugurationInfo$Term)
+# create a table showing presidents and parties:
+
+parties <- unique(InaugurationInfo[,c("File","Party")])
+colnames(parties)=c("President","Party")
+
+# select only Republican and Democratic
+parties=parties[parties$Party %in% c("Democratic","Republican"),]
+
+
+
+
+
+
+
+
+```
+
+
+
+#step 2 text processing
+```{r}
+ff.all<-tm_map(ff.all, stripWhitespace)
+ff.all<-tm_map(ff.all, content_transformer(tolower))
+ff.all<-tm_map(ff.all, removeWords, stopwords("english"))
+ff.all<-tm_map(ff.all, removeWords, character(0))
+ff.all<-tm_map(ff.all, removePunctuation)
+myStopwords <- c("can", "say","one","way","use",
+"also","howevever","tell","will",
+"much","need","take","tend","even",
+"like","particular","rather","said",
+"get","well","make","ask","come","end",
+"first","two","help","often","may",
+"might","see","something","thing","point",
+"post","look","right","now","think","‘ve ",
+"‘re ","another","put","set","new","good",
+"want","sure","kind","large","yes,","day","etc",
+"quit","since","attempt","lack","seen","awar",
+"littl","ever","moreover","though","found",
+"enough","far","away","achieve","draw",
+"last","never","brief","bit","fellow",
+"great","let","upon","help","today","change","methods"
+,"happy","journey","millions","together","century","with","but","or","by","be","this","not","that", "we","must","every","â€","shall","time","just","made","years","country","â€"
+)
+
+ff.all <- tm_map(ff.all, removeWords, myStopwords)
+
+# compute TF-IDF weighted document-term matrices for individual speeches. 
+dtm <- DocumentTermMatrix(ff.all,
+                          control = list(weighting = function(x)
+                                             weightTfIdf(x, 
+                                                         normalize =FALSE),
+                                         stopwords = TRUE))
+ff.dtm=tidy(dtm)
+
+
+```
+
+#step 3: map presidents and parties
+```{r}
+filenames=ff.dtm$document
+
+name_processing=function(filename,pattern){
+  matches=regexec(pattern = pattern,filename)
+  
+  result<-regmatches(filename,matches)
+  president_name=result[[1]][2]
+  term=result[[1]][3]
+  return(c(president_name,term))
+}
+regex="inaug(.*?)-([0-9])\\.txt"
+
+presidentNames=c()
+terms=c()
+for (filename in filenames){
+  result=name_processing(filename,pattern=regex)
+  presidentNames=c(presidentNames,result[1])
+  terms=c(terms,result[2])
+}
+President_term=paste(presidentNames,terms)
+
+ff.dtm$President=presidentNames
+ff.party=merge(ff.dtm,parties,by='President')
+
+
+```
+
+# step 4 visualize Republican VS Democratic
+```{r}
+ff.party=summarise(group_by(ff.party, term,Party), sum(count))
+
+Republican=ff.party[ff.party$Party=="Republican",]
+Democratic=ff.party[ff.party$Party=="Democratic",]
+
+Republican$RelativeFrequency_Rep=Republican$`sum(count)`/sum(Republican$`sum(count)`)*100
+Democratic$RelativeFrequency_Dem=Democratic$`sum(count)`/sum(Democratic$`sum(count)`)*100
+# get top 30 words for each party:
+
+Republican.top50=Republican[order(Republican$`sum(count)`,decreasing = TRUE)[1:50],]
+Democratic.top50=Democratic[order(Democratic$`sum(count)`,decreasing = TRUE)[1:50],]
+
+temp1=merge(Republican.top50,Democratic,by="term",all.x=TRUE)[,c("term","RelativeFrequency_Rep","RelativeFrequency_Dem")]
+temp1[is.na(temp1)]=0
+
+temp2=merge(Republican,Democratic.top50,by="term",all.y=TRUE)[,c("term","RelativeFrequency_Rep","RelativeFrequency_Dem")]
+temp2[is.na(temp2)]=0
+party_plot=rbind(temp1,temp2)
+party_plot=unique(party_plot)
+
+
+
+plot_ly(data=party_plot,x=~RelativeFrequency_Rep,y=~RelativeFrequency_Dem,text=~term,hoverinfo="text",mode = "markers") %>%
+  layout(title = 'Term Ralative Frequency: Republican VS Democracy',
+         yaxis = list(zeroline=TRUE,range=c(0,0.3),title='Democratic Relative Frequency(%)'),
+         xaxis = list(zeroline=TRUE,range=c(0,0.3),title='Republcian Relative Frequency(%)'),
+         shapes=list(type='line',x0=0,x1=1,y0=0,y1=1,line=list(width=1,color="red")),
+         annotations=list(
+           list(x=0.25,y=0.25,text="Equal Frequency"),
+           list(x=0.05,y=0.2,text="Democratic said more!",showarrow=FALSE,
+                font=list(color='blue',size=15)),
+           list(x=0.25,y=0.05,text="Republican said more!",showarrow=FALSE,
+                font=list(color='red',size=15))
+           )
+         )
+ 
+```
+
+# step 5 data processing for history of terms
+```{r}
+ff.dtm$President_term=President_term
+
+x=merge(ff.dtm,InaugurationInfo,by='President_term')
+
+
+ff.history=x[,c("President_term","term","count","Year")]
+rm(x)
+
+ff.history=group_by(ff.history,President_term)%>%mutate(RelativeFrequency=count/sum(count)*100)
+
+# save ff.history for R shiny
+save(ff.history,file="../out/ff_history.Rdata")
+
+
+
+```
+
+#step 6 Interactive shiny app
+```{r}
+library(shiny)
+
+shinyApp(
+    ui = fluidPage(
+      h4("select phrases"),
+      textInput("text", label = "comma-seperated and case-insensitive", value="law,freedom,people"),
+      actionButton("submit", "Confirm"),
+      h5("please click Confirm to run"),
+      hr(),
+      plotOutput("plot")
+      
+    ),
+
+    server = function(input, output, session) {
+      data_input=eventReactive(input$submit,{
+        text=tolower(input$text)
+        words_selected=unlist(strsplit(text,","))
+        ff.selected=ff.history[ff.history$term %in% words_selected,] 
+        ff.selected=ff.selected[order(ff.selected$Year),]  
+      })
+      
+      
+      
+      output$plot=renderPlot({
+        ggplot(data=data_input(),aes(x=Year,y=RelativeFrequency,group=term,color=term))+geom_point()+geom_line()+labs(y="RelativeFrequency(%)")+ theme(axis.text.x = element_text(angle = 90, hjust = 1))
+      })
+      
+     
+
+    },
+
+   
+)
+
+
+
+```
+
+
+#step 7 topic modeling-- Republicans vs Democratic
+
+
+```{r}
+#Set parameters for Gibbs sampling
+dtm_tf<- DocumentTermMatrix(ff.all)
+
+burnin <- 4000
+iter <- 2000
+thin <- 500
+seed <-list(2003,5,63,100001,765)
+nstart <- 5
+best <- TRUE
+
+#Number of topics
+k <- 10
+
+ldaOut <-LDA(dtm_tf,k, method="Gibbs", control=list(nstart=nstart, seed = seed, best=best, burnin = burnin, iter = iter, thin=thin))
+
+
+#write out results
+
+#docs to topics
+ldaOut.topics <- data.frame(topics(ldaOut))
+write.csv(ldaOut.topics,file=paste("../out/LDAGibbs",k,"DocsToTopics.csv"))
+
+#terms in each topic
+ldaOut.terms <- as.matrix(terms(ldaOut,10))
+write.csv(ldaOut.terms,file=paste("../out/LDAGibbs",k,"TopicsToTerms.csv"))
+
+#probabilities associated with each topic assignment
+topicProbabilities <- as.data.frame(ldaOut@gamma)
+write.csv(topicProbabilities,file=paste("../out/LDAGibbs",k,"TopicProbabilities.csv"))
+
+
+
+filenames=rownames(ldaOut.topics)
+Presidents=c()
+for (filename in filenames){
+  President=name_processing(filename,regex)[1]
+  Presidents=c(Presidents,President)
+}
+ldaOut.topics$Presidents=Presidents
+Party_topics=merge(ldaOut.topics,parties,by.x='Presidents',by.y='President')
+
+# topics Republicans want to pick
+Republican_topics=table(Party_topics$topics.ldaOut.[Party_topics$Party=="Republican"])
+
+# topics Democratic want to pick
+Democratic_topics=table(Party_topics$topics.ldaOut.[Party_topics$Party=="Democratic"])
+names(Republican_topics)=paste("topics",names(Republican_topics))
+names(Democratic_topics)=paste("topics",names(Democratic_topics))
+
+Republican_topics
+Democratic_topics
+
+
+
+
+```

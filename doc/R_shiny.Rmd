@@ -1,0 +1,52 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+#step 6 Interactive shiny app
+```{r}
+library(shiny)
+library(ggplot2)
+load("../out/ff_history.Rdata")
+
+shinyApp(
+    ui = fluidPage(
+      h4("select phrases"),
+      textInput("text", label = "comma-seperated and case-insensitive", value="law,freedom,people"),
+      actionButton("submit", "Confirm"),
+      h5("please click Confirm to run"),
+      hr(),
+      plotOutput("plot")
+      
+    ),
+
+    server = function(input, output, session) {
+      data_input=eventReactive(input$submit,{
+        text=tolower(input$text)
+        words_selected=unlist(strsplit(text,","))
+        ff.selected=ff.history[ff.history$term %in% words_selected,] 
+        ff.selected=ff.selected[order(ff.selected$Year),]  
+      })
+      
+      
+      
+      output$plot=renderPlot({
+        ggplot(data=data_input(),aes(x=Year,y=RelativeFrequency,group=term,color=term))+geom_point()+geom_line()+labs(y="RelativeFrequency(%)")+ theme(axis.text.x = element_text(angle = 90, hjust = 1))
+      })
+      
+     
+
+    },
+
+    options = list(height = 600)
+)
+
+
+
+```
+
+
